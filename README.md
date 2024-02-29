@@ -2,8 +2,9 @@
 <!-- PROJECT LOGO -->
 <br />
 <div align="center">
-
-
+  <a href="https://github.com/alpine-sec/thevlad">
+    <img width="488" alt="thevlad" src="https://github.com/alpine-sec/thevlad/blob/main/images/thevlad_logo.png">
+  </a>
   <h3 align="center">THEVLAD: Remote execution and triage tool via EDRs API</h3>
 
   <p align="center">
