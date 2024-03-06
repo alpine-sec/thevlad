@@ -1,4 +1,30 @@
 #!/usr/bin/env python3
+#
+# vlad.py
+#
+# (c) Authors: Juan Carlos Sanchez & Miguel Quero
+# e-mail: jc.sanchez@alpinesec.io
+# company: Alpine Security
+#
+# ***************************************************************
+#
+# The license below covers all files distributed with infofile unless 
+# otherwise noted in the file itself.
+#
+# This program is free software: you can redistribute it and/or 
+# modify it under the terms of the GNU General Public License as 
+# published by the Free Software Foundation, version 3.
+# 
+# This program is distributed in the hope that it will be useful, 
+# but WITHOUT ANY WARRANTY; without even the implied warranty of 
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU 
+# General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License 
+# along with this program. If not, see <https://www.gnu.org/licenses/>. 
+#
+#
+
 
 #Libraries
 import argparse
@@ -19,7 +45,7 @@ from munch import munchify
 
 #Global Variables
 VERSION = '0.1'
-INSTALL_PATH = os.path.dirname(os.path.abspath(__file__)) # represents the path where the script is located
+INSTALL_PATH = os.path.dirname(os.path.abspath(__file__)) 
 
 
 def parse_config(file_path):
@@ -70,50 +96,75 @@ def print_headers_list_endpoints():
     print("    {:<30} {:<45} {:<15} {:<20} {:<30} {:<10} {:<20}".format("-------------", "--", "--", "--", "---------", "------", "----------"))
 
 def list_endpoints(token, vendor, search=None):
-    if vendor == "MDATP":
+    if vendor == "MDATP":   
         url = "https://api-eu.securitycenter.microsoft.com/api/machines"
-        headers = { 
-            'Authorization' : "Bearer " + token,
-        }
-
-        response = requests.get(url, headers=headers)
-
-        if response.status_code == 200: 
-            #Create a header for the output with this fields:
-            #Computer Name, ID, OS, IP, Last Seen, Health Status, Onboarding Status
-            first_time_headers = True
-            host_found = False
-            host_info = None
-            for machine in response.json()['value']:
-                if search and machine['healthStatus'] == 'Active' and machine['onboardingStatus'] == 'Onboarded':
-                    if search in machine['computerDnsName']:   
-                        host_found = True
+        first_time_headers = True
+        while True:   
+            headers = { 
+                'Authorization' : "Bearer " + token,
+            }
+            try:
+                response = requests.get(url, headers=headers)
+            except requests.exceptions.RequestException as e:
+                print("    - MDATP API ERROR: Error {}".format(e))
+                return None
+            
+            if response.status_code == 200:               
+                host_found = False
+                host_info = None
+                machines = response.json()['value']
+                if not machines:
+                    break
+                for machine in response.json()['value']:
+                    if search and machine['healthStatus'] == 'Active' and machine['onboardingStatus'] == 'Onboarded':
+                        if search in machine['computerDnsName']:   
+                            host_found = True
+                            if first_time_headers == True:
+                                print_headers_list_endpoints()
+                                first_time_headers = False
+                            print_formatted_machine(machine)
+                    elif machine['healthStatus'] == 'Active' and machine['onboardingStatus'] == 'Onboarded':
                         if first_time_headers == True:
                             print_headers_list_endpoints()
                             first_time_headers = False
-                        host_info = "    {:<30} {:<45} {:<15} {:<20} {:<30} {:<10} {:<20}".format(machine['computerDnsName'], machine['id'], machine['osPlatform'], machine['lastIpAddress'], machine['lastSeen'], machine['healthStatus'], machine['onboardingStatus'])
+                        host_found = True
+                        print_formatted_machine(machine)
+                        print()           
                     
-                elif machine['healthStatus'] == 'Active' and machine['onboardingStatus'] == 'Onboarded':
-                    if first_time_headers == True:
-                        print_headers_list_endpoints()
-                        first_time_headers = False
-                    host_found = True
-                    print("    {:<30} {:<45} {:<15} {:<20} {:<30} {:<10} {:<20}".format(machine['computerDnsName'], machine['id'], machine['osPlatform'], machine['lastIpAddress'], machine['lastSeen'], machine['healthStatus'], machine['onboardingStatus']))
-                    print()
-            if host_found == False:
+            if "@odata.nextLink" in response.json().keys():
+                url = response.json()['@odata.nextLink']
+            else:
+                break        
+        if host_found == False:
                 print("    Endpoint not found!")
                 print()
-            else:
-                if host_info != None:
-                    print(host_info)
-                    print()  
         else:
-            print("    - API error: {}".format(response.status_code))     
+            if host_info != None:
+                print(host_info)
+                print()    
+                    
+def print_formatted_machine(machine):
+    computerDnsName = machine['computerDnsName'] if machine['computerDnsName'] is not None else 'N/A'
+    id = machine['id'] if machine['id'] is not None else 'N/A'
+    osPlatform = machine['osPlatform'] if machine['osPlatform'] is not None else 'N/A'
+    lastIpAddress = machine['lastIpAddress'] if machine['lastIpAddress'] is not None else 'N/A'
+    lastSeen = machine['lastSeen'] if machine['lastSeen'] is not None else 'N/A'
+    healthStatus = machine['healthStatus'] if machine['healthStatus'] is not None else 'N/A'
+    onboardingStatus = machine['onboardingStatus'] if machine['onboardingStatus'] is not None else 'N/A'
+    print("    {:<30} {:<45} {:<15} {:<20} {:<30} {:<10} {:<20}".format(computerDnsName, id, osPlatform, lastIpAddress, lastSeen, healthStatus, onboardingStatus))
 
 def generate_command_script(command, output_file):
-    decoded_command = base64.b64decode(command).decode('utf-8')
-    with open(output_file, 'w') as f:
-        f.write(decoded_command)
+    try:
+        decoded_command = base64.b64decode(command).decode('utf-8')
+    except (TypeError, ValueError) as e:
+        print(f"    - Error decoding command: {e}")
+        return
+
+    try:
+        with open(output_file, 'w') as f:
+            f.write(decoded_command)
+    except IOError as e:
+        print(f"    - Error writing to file {output_file}: {e}")
 
 def upload_file(token, vendor, file_path):
     if vendor == "MDATP":
@@ -173,7 +224,8 @@ def put_file(token, vendor, machineid, binary):
             return None
         print("  + PUT FILE DONE WITH STATUS CODE: {}".format(response.status_code))
         statusdata = json.loads(response.text)
-        print("    + DEBUG: {}".format(statusdata))
+        # DEBUG PRINT
+        #print("    + DEBUG: {}".format(statusdata))
         actionid = statusdata['id']
         return actionid
 
@@ -239,14 +291,10 @@ def waiting_download_execution(token, vendor, machineid):
             print("  + ERROR: Execution failed: {}".format(response.text))
             return None
         resdata = json.loads(response.text)
-
-        #with open("/tmp/testing.txt", 'w') as f:
-        # Convierte 'resdata' a una cadena de texto y escribe el contenido en 'f'
-         #   f.write(json.dumps(resdata))
-        
         print("    + STATUS: {}".format(resdata['value'][0]['status']))
         print("    + TASK ID: {}".format(resdata['value'][0]['id'])) 
-        print("    + INDEX: {}".format(resdata['value'][0]['commands'][0]['index'])) 
+        #DEBUG PRINT
+        #print("    + INDEX: {}".format(resdata['value'][0]['commands'][0]['index'])) 
         index_task = resdata['value'][0]['commands'][0]['index']  
         task_id = resdata['value'][0]['id']     
 
@@ -268,8 +316,8 @@ def waiting_download_execution(token, vendor, machineid):
                 sys.exit(1)
         print("]") 
         print("    + DONE")
-
-        print("    + Index_task: {}".format(index_task))
+        #DEBUG PRINT
+        #print("    + Index_task: {}".format(index_task))
         print("    + Task_id: {}".format(task_id))
 
         url = "https://api.securitycenter.microsoft.com/api/machineactions/{}/GetLiveResponseResultDownloadLink(index={})".format(task_id,index_task)
@@ -398,7 +446,8 @@ def download_file(token, vendor, path, machineid, downod):
             return None
         print("    + EXECUTION DONE WITH STATUS CODE: {}".format(response.status_code))
         url_to_download, task_id = waiting_download_execution(token, vendor, machineid)
-        print("    + DOWNLOADING FILE FROM : {}".format(url_to_download))
+        #DEBUG PRINT
+        #print("    + DOWNLOADING FILE FROM : {}".format(url_to_download))
         path = path.replace("\\", "/")
         path_object = pathlib.Path(path)
         filename = path_object.name
@@ -410,10 +459,13 @@ def download_file(token, vendor, path, machineid, downod):
         decompress_gz_file(filename_path,filename_output)
 
 def decompress_gz_file(input_path, output_path):
-    with gzip.open(input_path, 'rb') as f_in:
-        with open(output_path, 'wb') as f_out:
-            shutil.copyfileobj(f_in, f_out)        
-    
+    try:
+        with gzip.open(input_path, 'rb') as f_in:
+            with open(output_path, 'wb') as f_out:
+                shutil.copyfileobj(f_in, f_out)      
+    except IOError as e:  
+        print("    - DECOMPRESS ERROR: Error {}".format(e))
+
 def cleanup_files(token, vendor, filename):
     if vendor == "MDATP":
         url = "https://api.securitycenter.microsoft.com/api/libraryfiles/{}".format(filename)
@@ -444,7 +496,7 @@ def get_args():
     
     argparser.add_argument('-l', '--list_endpoints',
                            required=False,
-                           action='store_true', # store_true means that if the argument is present, it will be set to True	
+                           action='store_true', 
                            help='Command to execute in base64 format')
 
     argparser.add_argument('-s', '--search_endpoints',
@@ -620,8 +672,8 @@ def main():
             print("  + BINARY {} CLEANED: {}".format(ubinary, response))
 
     # Download output
-    
-    print("    + DOWNLOADING OUTPUT: {}".format(resdata['value']))
+    #DEBUG PRINT
+    #print("    + DOWNLOADING OUTPUT: {}".format(resdata['value']))
     url = resdata['value']
     response = requests.get(url)
     data = response.json()
