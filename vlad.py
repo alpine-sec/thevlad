@@ -497,12 +497,12 @@ def get_args():
     argparser.add_argument('-l', '--list_endpoints',
                            required=False,
                            action='store_true', 
-                           help='Command to execute in base64 format')
+                           help='List every endpoint in the client with theese vendor.')
 
     argparser.add_argument('-s', '--search_endpoints',
                            required=False,
                            action='store',
-                           help='Search endpoints by name')
+                           help='Search partial/literal endpoints by name')
 
     argparser.add_argument('-x', '--command',
                            required=False,
@@ -522,12 +522,12 @@ def get_args():
     argparser.add_argument('-d', '--download_file',
                            required=False,
                            action='store',
-                           help='Download the file indicated in the path. -c required and must be MDATP')
+                           help='Download the file indicated in the path. -c required')
     
     argparser.add_argument('-f', '--force_action',
                            required=False,
                            action='store_true',
-                           help='Force the execution of the action. . -x required')
+                           help='Force the execution of the action.')
 
     args = argparser.parse_args()
 
