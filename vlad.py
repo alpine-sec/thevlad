@@ -45,8 +45,6 @@ from munch import munchify
 
 #Global Variables
 VERSION = '0.1'
-INSTALL_PATH = os.path.dirname(os.path.abspath(__file__)) 
-
 
 def parse_config(file_path):
 
@@ -547,7 +545,22 @@ def main():
     force_action = args.force_action
 
 # Parse config file
-    configapifile = "{}/vlad.yaml".format(INSTALL_PATH)
+    
+    config_name = 'vlad.yaml'
+
+    # determine if application is a script file or frozen exe
+    if getattr(sys, 'frozen', False):
+        INSTALL_PATH = os.path.dirname(sys.executable)
+    elif __file__:
+        INSTALL_PATH = os.path.dirname(__file__)
+
+    configapifile = os.path.join(INSTALL_PATH, config_name)
+
+    #Check if config file exists
+    if not os.path.exists(configapifile):
+        print("    - ERROR: Config file not found")
+        sys.exit(1)
+
     api_clients, apicred = parse_config(configapifile)
 
 # Create tmp folder
@@ -569,6 +582,10 @@ def main():
         sys.exit(1)
     else:
         token = mdatp_auth(client, apicred)
+
+    if not token:
+        print("    - ERROR: No token received")
+        sys.exit(1)
 
     if endlist:
         print()
