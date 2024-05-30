@@ -465,12 +465,14 @@ def decompress_gz_file(input_path, output_path):
         print("    - DECOMPRESS ERROR: Error {}".format(e))
 
 def cleanup_files(token, vendor, filename):
+    print ("    + CLEANING UP FILE: {}".format(filename))
     if vendor == "MDATP":
         url = "https://api.securitycenter.microsoft.com/api/libraryfiles/{}".format(filename)
         headers = { 
             'Authorization' : "Bearer " + token,
         }
         response = requests.delete(url, headers=headers)
+        print("    + OUTPUT: {}".format(response.text))
         return response    
         
 
@@ -526,6 +528,11 @@ def get_args():
                            required=False,
                            action='store_true',
                            help='Force the execution of the action.')
+    
+    argparser.add_argument('-k', '--clear_file',
+                           required=False,
+                           action='store',
+                           help='Clear files from live response library.')
 
     args = argparser.parse_args()
 
@@ -543,6 +550,7 @@ def main():
     searchstr = args.search_endpoints
     downloadfile = args.download_file
     force_action = args.force_action
+    clearfile = args.clear_file
 
 # Parse config file
     
@@ -610,6 +618,10 @@ def main():
         download_file(token, vendor, downloadfile, machineid, downod)
         sys.exit(0) 
 
+    if clearfile:
+        print("- DELETE FILE {} FROM LIVE RESPONSE LIBRARY".format(clearfile))
+        cleanup_files(token, vendor, clearfile)
+        sys.exit(0) 
     
 
     if not command:
@@ -652,10 +664,12 @@ def main():
         if putactid:
             output = get_execution_output(token, vendor, putactid)
             if output == 'Failed':
+                cleanup_files(token, vendor, uscript)
                 print("    + ERROR: PutFile failed")
                 sys.exit(1)
         else:
             print("    + ERROR: No PutFile actionid received")
+            cleanup_files(token, vendor, uscript)
             sys.exit(1)
             
 
@@ -671,10 +685,12 @@ def main():
         output = get_execution_output(token, vendor, exeactid)
     else:
         print("  + ERROR: No RunScript actionid received")
+        cleanup_files(token, vendor, uscript)
         sys.exit(1)
     
     if not output:
         print("  + ERROR: No RunScript output received")
+        cleanup_files(token, vendor, uscript)
         sys.exit(1)
 
     resdata = json.loads(output)
