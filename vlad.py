@@ -175,10 +175,10 @@ def upload_file(token, vendor, file_path):
         # Check if file extesion is .ps1
         if filename.endswith('.ps1'):
             print("- UPLOADING EXECUTION SCRIPT {} TO MDATP LIVE RESPONSE LIBRARY".format(filename))
-            description = "Jungl3 Remote Execution Script"
+            description = "Vlad Remote Execution Script"
         else:
             print("- UPLOADING BINARY {} TO MDATP LIVE RESPONSE LIBRARY".format(filename))
-            description = "Jungl3 Uploaded Binary"
+            description = "Vlad Uploaded Binary"
 
         with open(file_path, "rb") as f:
             file = f.read()
@@ -213,7 +213,7 @@ def put_file(token, vendor, machineid, binary):
                     ]
                 },
             ],
-            "Comment":"Jungl3 Live Response Automations"
+            "Comment":"Vlad Live Response Automations"
         }
 
         response = requests.post(url, headers=headers, json=data)
@@ -247,7 +247,7 @@ def execute_command(token, vendor, machineid, script):
                     ]
                 }
             ],
-            "Comment":"Jungl3 Live Response Automations"
+            "Comment":"Vlad Live Response Automations"
         }
         response = requests.post(url, headers=headers, json=data)
         if response.status_code != 200 and response.status_code != 201:
@@ -349,18 +349,22 @@ def get_execution_output(token, vendor, actionid):
         count = 0
         while resdata['status'] != 'Succeeded':
             response = requests.get(url, headers=headers)
-            resdata = json.loads(response.text)
-            # Print point without space to avoid new line, in realtime in console witouh buffering
-            print("·", end="", flush=True)
-            time.sleep(5)
-            count += 1
-            if count == 120:
-                print("]")
-                print("  - ERROR TIMEOUT")
-                return None
-            elif resdata['status'] == 'Failed':
-                print("] - ERROR EXECUTION FAILED. BINARY ALREADY RUNNING?")
-                return resdata['status']
+            if response.text:
+                resdata = json.loads(response.text)
+                # Print point without space to avoid new line, in realtime in console witouh buffering
+                print("·", end="", flush=True)
+                time.sleep(5)
+                count += 1
+                if count == 120:
+                    print("]")
+                    print("  - ERROR TIMEOUT")
+                    return None
+                elif resdata['status'] == 'Failed':
+                    print("] - ERROR EXECUTION FAILED. BINARY ALREADY RUNNING?")
+                    return resdata['status']
+            else:
+                resdata = None
+                print('Warning: Response text is empty')    
         print("]") 
         print("    + DONE")
 
@@ -404,7 +408,7 @@ def delete_action(token, vendor, delete_actionid):
             'Content-Type': 'application/json'
         }
         data = {
-            "Comment":"Jungl3 Live Response Automations cancelled id {}".format(delete_actionid)
+            "Comment":"Vlad Live Response Automations cancelled id {}".format(delete_actionid)
         }
 
         response = requests.post(url, headers=headers, json=data)
@@ -436,7 +440,7 @@ def download_file(token, vendor, path, machineid, downod):
                     ]
                 }
             ],
-            "Comment":"Jungl3 Live Response Automations"
+            "Comment":"Vlad Live Response Automations"
         }
         response = requests.post(url, headers=headers, json=data)
         if response.status_code != 200 and response.status_code != 201:
@@ -472,9 +476,42 @@ def cleanup_files(token, vendor, filename):
             'Authorization' : "Bearer " + token,
         }
         response = requests.delete(url, headers=headers)
-        print("    + OUTPUT: {}".format(response.text))
         return response    
-        
+    
+def list_library(token, vendor,print_output=True):
+    if vendor == "MDATP":
+        url = "https://api.securitycenter.microsoft.com/api/libraryfiles"
+        headers = { 
+            'Authorization' : "Bearer " + token,
+        }
+        response = requests.get(url, headers=headers)
+        formatted_json = response.json()
+        files_info = []  
+        if print_output:
+            print("    + OUTPUT:")
+        for file in formatted_json['value']:
+            file_info = {
+                'fileName': file.get('fileName', 'N/A'),
+                'description': file.get('description', 'N/A'),
+                'sha256': file.get('sha256', 'N/A'),
+                'createdBy': file.get('createdBy', 'N/A')
+        }
+            files_info.append(file_info) 
+            if print_output:
+                formatted_output = "        - fileName: {fileName}, description: {description}, sha256: {sha256}, createdBy: {createdBy}".format(**file_info)
+                print(formatted_output)  
+        return files_info
+
+def cleanup_all_files(token, vendor):
+    files_info = list_library(token, vendor,print_output=False)
+    files_to_delete = [file for file in files_info if "Vlad" in file['description']]
+    if not files_to_delete: 
+        print("  + NO FILES FOUND WITH 'Vlad' IN THEIR DESCRIPTION.")
+        return
+    for file in files_to_delete:
+        print("    + Deleting file: {}".format(file['fileName']))
+        cleanup_files(token, vendor,file['fileName'])  
+        time.sleep(1)
 
 def get_args():
     argparser = argparse.ArgumentParser(
@@ -533,6 +570,16 @@ def get_args():
                            required=False,
                            action='store',
                            help='Clear files from live response library.')
+    
+    argparser.add_argument('-e', '--list_library_uploads',
+                           required=False,
+                           action='store_true',
+                           help='List files uploaded from live response library.')
+    
+    argparser.add_argument('-a', '--clear_all_files',
+                           required=False,
+                           action='store_true',
+                           help='Clear all files from live response library.')
 
     args = argparser.parse_args()
 
@@ -551,6 +598,9 @@ def main():
     downloadfile = args.download_file
     force_action = args.force_action
     clearfile = args.clear_file
+    listlibrary = args.list_library_uploads
+    clearallfiles = args.clear_all_files
+
 
 # Parse config file
     
@@ -622,6 +672,16 @@ def main():
         print("- DELETE FILE {} FROM LIVE RESPONSE LIBRARY".format(clearfile))
         cleanup_files(token, vendor, clearfile)
         sys.exit(0) 
+
+    if listlibrary:
+        print("- SHOW FILES FROM LIVE RESPONSE LIBRARY")
+        list_library(token,vendor, print_output=True)
+        sys.exit(0) 
+        
+    if clearallfiles:
+        print("- DELETE ALL FILES FROM LIVE RESPONSE LIBRARY")
+        cleanup_all_files(token, vendor)
+        sys.exit(0)
     
 
     if not command:
@@ -647,7 +707,7 @@ def main():
     
 
     # Create tmp output file with random beauty name
-    ps1of = os.path.join(tmpod, 'j3-{}.ps1'.format(os.urandom(4).hex()))   
+    ps1of = os.path.join(tmpod, 'vlad-{}.ps1'.format(os.urandom(4).hex()))   
 
     # Generate script
     script = generate_command_script(command, ps1of) 
