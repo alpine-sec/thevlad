@@ -499,12 +499,12 @@ def list_library(token, vendor,print_output=True):
             files_info.append(file_info) 
             if print_output:
                 formatted_output = "        - fileName: {fileName}, description: {description}, sha256: {sha256}, createdBy: {createdBy}".format(**file_info)
-                print(formatted_output)  
+                print(formatted_output)       
         return files_info
 
 def cleanup_all_files(token, vendor):
     files_info = list_library(token, vendor,print_output=False)
-    files_to_delete = [file for file in files_info if "Vlad" in file['description']]
+    files_to_delete = [file for file in files_info if file['description'] is not None and "Vlad" in file['description']]
     if not files_to_delete: 
         print("  + NO FILES FOUND WITH 'Vlad' IN THEIR DESCRIPTION.")
         return
