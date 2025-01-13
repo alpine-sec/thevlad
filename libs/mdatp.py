@@ -186,7 +186,8 @@ def mdatp_execute_command(token, machineid, script):
         print("    + MDATP ERROR: Execution failed: {}".format(response.text))
         return None
     print("    + EXECUTION TASK GENERATED WITH STATUS CODE: {}".format(response.status_code))
-    statusdata = json.loads(response.text)
+    statusdata = response.json()
+
     actionid = statusdata['id']
 
     return actionid
@@ -374,7 +375,8 @@ def mdatp_get_execution_output(token, actionid, action=None):
     except requests.exceptions.RequestException as e:
         print("    - MDATP GET EXECUTION OUTPUT API ERROR: Error {}".format(e))
         return None
-    return response.text
+        
+    return response.json()
 
 def mdatp_download_file(token, path, machineid, downod):
     actionid = None

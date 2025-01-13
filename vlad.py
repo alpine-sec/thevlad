@@ -35,6 +35,7 @@ import requests
 import time
 
 from libs.utils import parse_config, generate_command_script, print_output_json
+from libs.utils import print_output_txt
 
 from libs.mdatp import mdatp_auth, mdatp_list_endpoints, mdatp_upload_file
 from libs.mdatp import mdatp_put_file, mdatp_execute_command, mdatp_delete_pending_actions
@@ -43,10 +44,11 @@ from libs.mdatp import mdatp_list_library, mdatp_cleanup_all_files, mdatp_get_ma
 
 from libs.tmv1 import tmv1_auth, tmv1_list_endpoints, tmv1_list_library, tmv1_upload_file
 from libs.tmv1 import tmv1_execute_command, tmv1_cleanup_file, tmv1_cleanup_all_files
-from libs.tmv1 import tmv1_get_machine_info
+from libs.tmv1 import tmv1_get_machine_info, tmv1_get_execution_output, tmv1_download_output
+from libs.tmv1 import tmv1_extract_data
 
 # GLOBAL VARIABLES
-VERSION = '0.3'
+VERSION = '0.4'
 INSTALL_PATH = os.path.dirname(os.path.abspath(__file__))
 
 SUPPORTED_VENDORS= ["MDATP", "TMV1"]
@@ -80,7 +82,7 @@ def vlad_download_file(token, vendor, downloadfile, machineid):
     if vendor == 'MDATP':
         mdatp_download_file(token, downloadfile, machineid, downod)
     elif vendor == 'TMV1':
-        print("    - ERROR: TMV1 does not support download file")
+        print("    - ERROR: Not implemented yet")
 
 def vlad_cleanup_file(token, vendor, clearfile):
     if vendor == 'MDATP':
@@ -151,25 +153,16 @@ def vlad_execute_command(token, vendor, machineid, scriptof, uscript):
             mdatp_cleanup_file(token, uscript)
             return None
 
-        resdata = json.loads(output)
-
-        if 'error' in resdata:
-            print("  + ERROR {}: {}".format(resdata['error']['code'], resdata['error']['message']))
-            # Cleanup files
-            mdatp_cleanup_file(token, uscript)
-            print("  + SCRIPT {} CLEANED: {}".format(uscript, response))
-            if binary:
-                mdatp_cleanup_file(token, ubinary)
-                print("  + BINARY {} CLEANED: {}".format(ubinary, response))
-
     elif vendor == 'TMV1':
         print("- EXECUTING SCRIPT: {}".format(scriptof))
-        output = tmv1_execute_command(token, machineid, scriptof)
-        if output:
-            print ("    - TMV1 EXECUTION OUTPUT: {}".format(output))
-        return None
+        taskid = tmv1_execute_command(token, machineid, uscript)
+        if not taskid:
+            print("    - ERROR: No TaskID received")
+            return None
+        print("    + SCRIPT TASK ID: {}".format(taskid))
+        output = tmv1_get_execution_output(token, taskid)
 
-    return resdata
+    return output
 
 def vlad_get_execution_output(token, vendor, execdata):
     if vendor == 'MDATP':
@@ -185,16 +178,17 @@ def vlad_get_execution_output(token, vendor, execdata):
             print("    - MDATP GET EXECUTION OUTPUT API ERROR: Error {}".format(response.status_code))
             return None
     elif vendor == 'TMV1':
-        print("    - ERROR: TMV1 does not support get execution output")
-        return None
+        output = tmv1_download_output(token, execdata)
+        #print ("    + SCRIPT GET EXECUTION OUTPUT: {}".format(output))
 
     return output
 
-def vlad_print_output(output, vendor, command):
+def vlad_print_output(output, vendor, command, tmpod=None):
     if vendor == 'MDATP':
         print_output_json(vendor, output, command)
     elif vendor == 'TMV1':
-        print("    - ERROR: TMV1 does not support print output")
+        report_path = tmv1_extract_data(output, tmpod)
+        print_output_txt(vendor, report_path, command)
 
 def vlad_cleanup_files(token, vendor, uscript, ubinary=None):
     if vendor == 'MDATP':
@@ -430,6 +424,7 @@ def main():
         response, ubinary = vlad_upload_binary(token, vendor, machineid, binary)
 
     # Execute command
+
     execdata = vlad_execute_command(token, vendor, machineid, scriptof, uscript)
 
     if execdata:
@@ -442,7 +437,7 @@ def main():
 
     # Print Output
     if output:
-        vlad_print_output(output, vendor, command)
+        vlad_print_output(output, vendor, command, tmpod)
 
     # Cleanup files
     print ("- CLEANING UP FILES")

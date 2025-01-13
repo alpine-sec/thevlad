@@ -1,10 +1,11 @@
 import os
+import time
 import json
 import requests
 
 from datetime import datetime, timedelta
 
-from libs.utils import print_formatted_machine, print_headers_list_endpoints
+from libs.utils import print_formatted_machine, print_headers_list_endpoints, decompress_zip_file
 
 
 def tmv1_auth(client, apicred):
@@ -228,6 +229,8 @@ def tmv1_execute_command(aatmv1, machineid, scriptof):
     token = aatmv1["token"]
     baseurl = aatmv1["baseurl"]
 
+    filename = os.path.basename(scriptof)
+
     url = "{}/v3.0/response/endpoints/runScript".format(baseurl)
 
     headers = {
@@ -235,18 +238,18 @@ def tmv1_execute_command(aatmv1, machineid, scriptof):
         'Content-Type': 'application/json;charset=utf-8'
     }
 
+    query_params = {}
+
     # Body must be a list of dictionaries
     body = [{
         'agentGuid': machineid,
-        'fileName': scriptof,
-        'description': 'Vlad Remote Execution of {}'.format(scriptof),
-        'parameter': ''  # Changed from 'parameters' to 'parameter'
+        'fileName': filename
     }]
 
     try:
-        response = requests.post(url, headers=headers, json=body)
+        response = requests.post(url, headers=headers, json=body, params=query_params)
         response_json = response.json()
-        print("DEBUG: Response: {}".format(response_json))
+        #print("DEBUG: Response: {}".format(response_json))
         
         # Check individual response statuses
         if response.status_code == 207:
@@ -258,8 +261,11 @@ def tmv1_execute_command(aatmv1, machineid, scriptof):
                     print("    - TMV1 EXECUTE COMMAND ERROR: {}".format(result))
                     return None
             
-            print("    - TMV1 EXECUTE COMMAND: Command sent successfully")
-            return response
+            print("    + TMV1 EXECUTE COMMAND: Command sent successfully")
+            statusdata = response.json()
+            taskid = statusdata[0].get('headers', [{}])[0].get('value', '').split('/')[-1]
+            return taskid
+
         else:
             print("    - TMV1 EXECUTE COMMAND ERROR: {}".format(response_json))
             return None
@@ -339,15 +345,16 @@ def tmv1_cleanup_all_files(aatmv1):
                 description = script.get('description')
                 if "Vlad" in description:
                     script_id = script.get('id')
+                    script_name = script.get('fileName')
                     #print("DEBUG: Script ID: {}".format(script_id))
                     # Delete the script using the ID
                     delete_url = f"{baseurl}/v3.0/response/customScripts/{script_id}"
                     delete_response = requests.delete(delete_url, headers=headers)
 
                     if delete_response.status_code == 204:
-                        print("    - TMV1 CLEANUP ALL: Script deleted successfully")
+                        print("    - TMV1 CLEANUP ALL: {} Script deleted successfully".format(script_name))
                     else:
-                        print("    - TMV1 CLEANUP ALL ERROR: Failed to delete script")
+                        print("    - TMV1 CLEANUP ALL ERROR: {} Failed to delete script".format(script_name))
                         return False
             return True
         else:
@@ -429,3 +436,131 @@ def tmv1_download_file(aatmv1, path, machineid, downod):
     except requests.exceptions.RequestException as e:
         print("    - TMV1 DOWNLOAD FILE API ERROR: Error {}".format(e))
         return None
+
+
+def tmv1_get_execution_output(aatmv1, taskid, timeout_minutes=10):
+    valid_statuses = {
+        'queued', 'running', 'succeeded', 'failed',
+        'canceled', 'pendingApproval', 'rejected'
+    }
+    terminal_statuses = {'succeeded', 'failed', 'canceled', 'rejected'}
+    
+    start_time = time.time()
+    timeout_seconds = timeout_minutes * 60
+
+    print("    + WAITING FOR THE TMV1 TASK TO BE COMPLETED: [", end="")
+    while (time.time() - start_time) < timeout_seconds:
+        result = tmv1_get_execution_status(aatmv1, taskid)
+        
+        if not result or 'items' not in result or not result['items']:
+            print("] - TMV1 WAIT EXECUTION: No valid response received")
+            time.sleep(20)
+            continue
+
+        task = result['items'][0]
+        status = task.get('status', '')
+        print("·", end="", flush=True)
+
+        if status not in valid_statuses:
+            print(f"] - TMV1 WAIT EXECUTION: Unknown status: {status}")
+            return None
+            
+        if status in terminal_statuses:
+            print(f"] - DONE with Task status: {status}")
+            return result
+            
+        time.sleep(30)
+    
+    print("] - TMV1 WAIT EXECUTION: Timeout after {} minutes".format(timeout_minutes))
+    return None
+
+
+def tmv1_get_execution_status(aatmv1, taskid):
+    token = aatmv1["token"]
+    baseurl = aatmv1["baseurl"]
+
+    url = "{}/v3.0/response/tasks".format(baseurl)
+
+    query_params = {
+        'filter': "id eq '{}'".format(taskid)
+    }
+
+    headers = {
+        'Authorization': 'Bearer ' + token
+    }
+
+    try:
+        response = requests.get(url, headers=headers, params=query_params)
+        response_json = response.json()
+        #print("DEBUG: Response: {}".format(response_json))
+        
+        if response.status_code == 200:
+            return response_json
+        else:
+            print("] - TMV1 GET EXECUTION OUTPUT ERROR: {}".format(response_json))
+            return None
+
+    except requests.exceptions.RequestException as e:
+        print("] - TMV1 GET EXECUTION OUTPUT API ERROR: Error {}".format(e))
+        return None
+
+    return response_json
+
+def tmv1_download_output(aatmv1, execdata):
+    token = aatmv1["token"]
+    baseurl = aatmv1["baseurl"]
+
+    taskid = execdata.get('items', [{}])[0].get('id', '')
+    
+    url = "{}/v3.0/response/tasks/{}".format(baseurl, taskid)
+
+    #print("DEBUG: Download URL: {}".format(url))
+    
+    headers = {
+        'Authorization': 'Bearer ' + token
+    }
+    
+    try:
+        response = requests.get(url, headers=headers)
+        response_json = response.json()
+        #print("DEBUG: Download Response: {}".format(response_json))
+        
+        if response.status_code == 200:
+            return response_json
+        else:
+            print(f"    - TMV1 DOWNLOAD OUTPUT ERROR: {response_json}")
+            return None
+            
+    except requests.exceptions.RequestException as e:
+        print(f"    - TMV1 DOWNLOAD OUTPUT API ERROR: Error {e}")
+        return None
+
+
+def tmv1_extract_data(execdata, tmpod):
+    if not execdata or 'resourceLocation' not in execdata:
+        print("    - TMV1 EXTRACT: No valid resource location")
+        return None
+        
+    url = execdata['resourceLocation']
+    password = execdata.get('password', '')
+    taskid = execdata['id']
+
+    filename = "{}.7z".format(taskid)
+    filename_path = "{}/{}".format(tmpod, filename)
+    print("    + SAVING FILE TO : {}".format(filename_path))
+
+    try:
+        with requests.get(url, stream=True) as response:
+            response.raise_for_status()
+            with open(filename_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+    except requests.exceptions.RequestException as e:
+        print("    - DOWNLOAD FILE ERROR: {}".format(e))
+        return None
+
+    output_path = "{}/{}".format(tmpod, taskid)
+    print("    + EXTRACTING FILE TO : {}".format(output_path))
+    decompress_zip_file(filename_path, output_path, password)
+
+    return output_path
