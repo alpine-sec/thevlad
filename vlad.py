@@ -326,7 +326,7 @@ def main():
     endlist = args.list_endpoints
     machineid = args.machineid
     searchstr = args.search_endpoints
-    downloadfile = args.download_file
+    downloadfile = args.collect_file
     force_action = args.force_action
     clearfile = args.clear_file
     listlibrary = args.list_library_uploads
