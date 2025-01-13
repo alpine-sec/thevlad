@@ -48,7 +48,7 @@ def mdatp_list_endpoints(token, search=None):
             print("    - MDATP LIST ENDPOINT API ERROR: Error {}".format(e))
             return None
         
-        if response.status_code == 200:               
+        if response.status_code == 200:
             host_found = False
             host_info = None
             machines = response.json()['value']
@@ -61,13 +61,13 @@ def mdatp_list_endpoints(token, search=None):
                         if first_time_headers == True:
                             print_headers_list_endpoints()
                             first_time_headers = False
-                        print_formatted_machine(machine)
+                        print_formatted_machine(machine, "MDATP")
                 elif machine['healthStatus'] == 'Active' and machine['onboardingStatus'] == 'Onboarded':
                     if first_time_headers == True:
                         print_headers_list_endpoints()
                         first_time_headers = False
                     host_found = True
-                    print_formatted_machine(machine)
+                    print_formatted_machine(machine, "MDATP")
                     print()
                 
         if "@odata.nextLink" in response.json().keys():
@@ -90,7 +90,7 @@ def mdatp_upload_file(token, file_path):
 
     filename = os.path.basename(file_path)
     # Check if file extesion is .ps1
-    if filename.endswith('.ps1'):
+    if filename.endswith('.ps1') or filename.endswith('.sh'):
         print("- UPLOADING EXECUTION SCRIPT {} TO MDATP LIVE RESPONSE LIBRARY".format(filename))
         description = "Vlad Remote Execution Script"
     else:
@@ -185,7 +185,7 @@ def mdatp_execute_command(token, machineid, script):
     if response.status_code != 200 and response.status_code != 201:
         print("    + MDATP ERROR: Execution failed: {}".format(response.text))
         return None
-    print("    + MDATP EXECUTION DONE WITH STATUS CODE: {}".format(response.status_code))
+    print("    + EXECUTION TASK GENERATED WITH STATUS CODE: {}".format(response.status_code))
     statusdata = json.loads(response.text)
     actionid = statusdata['id']
 
@@ -211,7 +211,7 @@ def mdatp_delete_action(token, delete_actionid):
         print("    - API error: {}".format(response))
     time.sleep(10)
 
-def mdatp_get_pending_actions(token, machineid):
+def mdatp_delete_pending_actions(token, machineid):
 
     url = "{}/api/machineactions?$filter=machineId eq '{}' and status eq 'Pending'".format(BASEURL, machineid)
     headers = { 
@@ -287,8 +287,7 @@ def mdatp_waiting_download_execution(token, machineid):
             print("] - ERROR DOWNLOAD EXECUTION FAILED. BINARY ALREADY RUNNING?")
             return None, None
 
-    print("]") 
-    print("    + DONE")
+    print("] - DONE") 
     #DEBUG PRINT
     #print("    + Index_task: {}".format(index_task))
     print("    + Task_id: {}".format(task_id))
@@ -328,7 +327,7 @@ def mdatp_get_execution_output(token, actionid, action=None):
 
     resdata = json.loads(response.text)
 
-    print("    + EXECUTING COMMAND: [", end="")
+    print("    + WAITING FOR EXECUTION OUTPUT: [", end="")
     count = 0
     while resdata['status'] != 'Succeeded':
         try:
@@ -358,8 +357,7 @@ def mdatp_get_execution_output(token, actionid, action=None):
         else:
             resdata = None
             print('  - MDATP WARNING: Response text is empty')    
-    print("]") 
-    print("    + DONE")
+    print("] - DONE")
 
     #print ("    + DEBUG: {} - {} - {}".format(resdata, actionid, index))
     if resdata:
@@ -411,7 +409,7 @@ def mdatp_download_file(token, path, machineid, downod):
         print("    + ERROR: Execution failed: {}".format(response.text))
         return None
 
-    print("    + EXECUTION DONE WITH STATUS CODE: {}".format(response.status_code))
+    print("    + TASK DONE WITH STATUS CODE: {}".format(response.status_code))
     url_to_download, task_id = mdatp_waiting_download_execution(token, machineid)
     if url_to_download == None:
         return None
@@ -499,3 +497,22 @@ def mdatp_cleanup_all_files(token):
                 time.sleep(10)
         if count == 5:
             print ("    - ERROR DELETING FILE: {} - MAX RETRIES REACHED".format(file['fileName']))
+
+def mdatp_get_machine_info(token, machineid):
+    url = "{}/api/machines/{}".format(BASEURL, machineid)
+    headers = {
+        'Authorization' : "Bearer " + token,
+    }
+
+    try:
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+    except requests.exceptions.RequestException as e:
+        print("  + MDATP GET MACHINE INFO API ERROR: Error {}".format(e))
+        return None
+
+    if response.status_code != 200:
+        print("  + ERROR: Execution failed: {}".format(response.text))
+        return None
+
+    return response.json()

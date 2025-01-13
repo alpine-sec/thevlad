@@ -34,16 +34,214 @@ import sys
 import requests
 import time
 
-from libs.utils import parse_config, generate_command_script, parse_json
+from libs.utils import parse_config, generate_command_script, print_output_json
 
 from libs.mdatp import mdatp_auth, mdatp_list_endpoints, mdatp_upload_file
-from libs.mdatp import mdatp_put_file, mdatp_execute_command, mdatp_get_pending_actions
+from libs.mdatp import mdatp_put_file, mdatp_execute_command, mdatp_delete_pending_actions
 from libs.mdatp import mdatp_get_execution_output, mdatp_download_file, mdatp_cleanup_file
-from libs.mdatp import mdatp_list_library, mdatp_cleanup_all_files
+from libs.mdatp import mdatp_list_library, mdatp_cleanup_all_files, mdatp_get_machine_info
+
+from libs.tmv1 import tmv1_auth, tmv1_list_endpoints, tmv1_list_library, tmv1_upload_file
+from libs.tmv1 import tmv1_execute_command, tmv1_cleanup_file, tmv1_cleanup_all_files
+from libs.tmv1 import tmv1_get_machine_info
 
 # GLOBAL VARIABLES
-VERSION = '0.2'
+VERSION = '0.3'
 INSTALL_PATH = os.path.dirname(os.path.abspath(__file__))
+
+SUPPORTED_VENDORS= ["MDATP", "TMV1"]
+
+def vlad_auth(client, vendor, apicred):
+    if vendor == 'MDATP':
+        token = mdatp_auth(client, apicred)
+    elif vendor == 'TMV1':
+        token = tmv1_auth(client, apicred)
+
+    return token
+
+def vlad_list_endpoints(token, vendor, searchstr=None):
+    if vendor == 'MDATP':
+        mdatp_list_endpoints(token, searchstr)
+    elif vendor == 'TMV1':
+        tmv1_list_endpoints(token, searchstr)
+
+def vlad_delete_pending_actions(token, vendor, machineid):
+    if vendor == 'MDATP':
+        mdatp_delete_pending_actions(token, machineid)
+    elif vendor == 'TMV1':
+        print("    - ERROR: TMV1 does not support force action")
+
+def vlad_download_file(token, vendor, downloadfile, machineid):
+    # Create Download folder
+    downod = os.path.join(INSTALL_PATH, 'downloads')
+    if not os.path.exists(downod):
+        os.makedirs(downod)
+
+    if vendor == 'MDATP':
+        mdatp_download_file(token, downloadfile, machineid, downod)
+    elif vendor == 'TMV1':
+        print("    - ERROR: TMV1 does not support download file")
+
+def vlad_cleanup_file(token, vendor, clearfile):
+    if vendor == 'MDATP':
+        mdatp_cleanup_file(token, clearfile)
+    elif vendor == 'TMV1':
+        print("    - ERROR: TMV1 does not support clear file")
+
+def vlad_list_library(token, vendor, print_output=False):
+    if vendor == 'MDATP':
+        print("- MDATP FILES FROM LIVE RESPONSE LIBRARY")
+        mdatp_list_library(token, print_output)
+    elif vendor == 'TMV1':
+        tmv1_list_library(token, print_output)
+
+def vlad_cleanup_all_files(token, vendor):
+    if vendor == 'MDATP':
+        mdatp_cleanup_all_files(token)
+    elif vendor == 'TMV1':
+        tmv1_cleanup_all_files(token)
+
+def vlad_upload_file(token, vendor, file):
+    if vendor == 'MDATP':
+        return mdatp_upload_file(token, file)
+    elif vendor == 'TMV1':
+        return tmv1_upload_file(token, file)
+
+def vlad_upload_binary(token, vendor, machineid, binary):
+    if vendor == 'MDATP':
+        response, ubinary = mdatp_upload_file(token, binary)
+        putactid = mdatp_put_file(token, machineid, ubinary)
+        print("    + PUT FILE ACTION ID: {}".format(putactid))
+        time.sleep(5)
+        if putactid:
+            output = mdatp_get_execution_output(token, putactid)
+            if output != 'Completed':
+                mdatp_cleanup_file(token, uscript)
+                print("    + ERROR: PutFile failed")
+                return None, None
+        else:
+            print("    + ERROR: No PutFile actionid received")
+            mdatp_cleanup_file(token, uscript)
+            return None, None
+    elif vendor == 'TMV1':
+        print("    - ERROR: TMV1 does not support binary upload")
+        return None, None
+
+    return response, ubinary
+
+def vlad_execute_command(token, vendor, machineid, scriptof, uscript):
+    if vendor == 'MDATP':
+        # Execute command
+        print("- EXECUTING SCRIPT: {}".format(scriptof))
+        exeactid = mdatp_execute_command(token, machineid, uscript)
+        print("    + SCRIPT ACTION ID: {}".format(exeactid))
+
+        # Wait until actionid appear on systems
+        time.sleep(5)
+
+        if exeactid:
+            output = mdatp_get_execution_output(token, exeactid)
+        else:
+            print("  + ERROR: No RunScript actionid received")
+            mdatp_cleanup_file(token, uscript)
+            return None
+        
+        if not output:
+            print("  + ERROR: No RunScript output received")
+            mdatp_cleanup_file(token, uscript)
+            return None
+
+        resdata = json.loads(output)
+
+        if 'error' in resdata:
+            print("  + ERROR {}: {}".format(resdata['error']['code'], resdata['error']['message']))
+            # Cleanup files
+            mdatp_cleanup_file(token, uscript)
+            print("  + SCRIPT {} CLEANED: {}".format(uscript, response))
+            if binary:
+                mdatp_cleanup_file(token, ubinary)
+                print("  + BINARY {} CLEANED: {}".format(ubinary, response))
+
+    elif vendor == 'TMV1':
+        print("- EXECUTING SCRIPT: {}".format(scriptof))
+        output = tmv1_execute_command(token, machineid, scriptof)
+        if output:
+            print ("    - TMV1 EXECUTION OUTPUT: {}".format(output))
+        return None
+
+    return resdata
+
+def vlad_get_execution_output(token, vendor, execdata):
+    if vendor == 'MDATP':
+        url = execdata['value']
+        try:
+            response = requests.get(url)
+        except requests.exceptions.RequestException as e:
+            print("    - MDATP GET EXECUTION OUTPUT API ERROR: Error {}".format(e))
+            return None
+        if response.status_code == 200:
+            output = response.json()
+        else:
+            print("    - MDATP GET EXECUTION OUTPUT API ERROR: Error {}".format(response.status_code))
+            return None
+    elif vendor == 'TMV1':
+        print("    - ERROR: TMV1 does not support get execution output")
+        return None
+
+    return output
+
+def vlad_print_output(output, vendor, command):
+    if vendor == 'MDATP':
+        print_output_json(vendor, output, command)
+    elif vendor == 'TMV1':
+        print("    - ERROR: TMV1 does not support print output")
+
+def vlad_cleanup_files(token, vendor, uscript, ubinary=None):
+    if vendor == 'MDATP':
+        check = mdatp_cleanup_file(token, uscript)
+        if check:
+            print("    + SCRIPT {} CLEANED".format(uscript))
+        else:
+            return False
+        if ubinary:
+            check = mdatp_cleanup_file(token, ubinary)
+            if check:
+                print("    + BINARY {} CLEANED".format(ubinary))
+            else:
+                return False
+    elif vendor == 'TMV1':
+        check = tmv1_cleanup_file(token, uscript)
+        if check:
+            print("    + SCRIPT {} CLEANED".format(uscript))
+        else:
+            return False
+
+    return True
+
+def vlad_get_machine_info(token, vendor, machineid):
+    if vendor == 'MDATP':
+        endpoint = mdatp_get_machine_info(token, machineid)
+    elif vendor == 'TMV1':
+        endpoint = tmv1_get_machine_info(token, machineid)
+
+    return endpoint
+
+def vlad_generate_output_file(tmpod, vendor, endpoint):
+    if vendor == 'MDATP':
+        osname = endpoint['osPlatform']
+        if "windows" in osname.lower():
+            ps1of = os.path.join(tmpod, 'vlad-{}.ps1'.format(os.urandom(4).hex()))
+        else:
+            ps1of = os.path.join(tmpod, 'vlad-{}.sh'.format(os.urandom(4).hex()))
+
+    elif vendor == 'TMV1':
+        osname = endpoint['os']['platform']
+        if "windows" in osname.lower():
+            ps1of = os.path.join(tmpod, 'vlad-{}.ps1'.format(os.urandom(4).hex()))
+        else:
+            ps1of = os.path.join(tmpod, 'vlad-{}.sh'.format(os.urandom(4).hex()))
+
+    return ps1of
 
 
 def get_args():
@@ -89,10 +287,10 @@ def get_args():
                            action='store',
                            help='Binary to upload and execute. -x required')
     
-    argparser.add_argument('-d', '--download_file',
+    argparser.add_argument('-d', '--collect_file',
                            required=False,
                            action='store',
-                           help='Download the machine file indicated in the path. -m required')
+                           help='Collect the machine file indicated in the path. -m required')
     
     argparser.add_argument('-f', '--force_action',
                            required=False,
@@ -145,25 +343,19 @@ def main():
 
     api_clients, apicred = parse_config(configapifile)
 
-# Create tmp folder
+    # Create tmp folder
     tmpod = os.path.join(INSTALL_PATH, 'tmp')
     if not os.path.exists(tmpod):
         os.makedirs(tmpod)
 
-# Create Dowload folder
-    downod = os.path.join(INSTALL_PATH, 'downloads')
-    if not os.path.exists(downod):
-        os.makedirs(downod)    
-
-# Authenticate
     if client not in api_clients:
         print("Client not found in config file")
         sys.exit(1)
-    if vendor != "MDATP":
-        print("Vendor not supported")
+    if vendor not in SUPPORTED_VENDORS:
+        print("Vendor {} not supported".format(vendor))
         sys.exit(1)
-    else:
-        token = mdatp_auth(client, apicred)
+    
+    token = vlad_auth(client, vendor, apicred)
 
     if not token:
         print("    - ERROR: No token received")
@@ -173,144 +365,100 @@ def main():
         print()
         print("  - LIST {} {} ENDPOINTS".format(vendor, client))
         print()
-        mdatp_list_endpoints(token)
+        vlad_list_endpoints(token, vendor)
         sys.exit(0)
 
     if searchstr:
         print("  - SEARCH {} {} ENDPOINTS".format(vendor, client))
         print()
-        mdatp_list_endpoints(token, searchstr)
+        vlad_list_endpoints(token, vendor, searchstr)
         sys.exit(0)  
 
     if force_action:
         force_action = True
         print("- LOOKING FOR PENDING TASKS TO BE CANCELLED")
-        mdatp_get_pending_actions(token, machineid)
+        vlad_delete_pending_actions(token, vendor, machineid)
       
     if downloadfile:
         if not machineid:
             print("  - ERROR: machineid required to download file")
             sys.exit(1)
         print("- DOWNLOAD FILE {} FROM MACHINE ID {}".format(downloadfile, machineid))
-        mdatp_download_file(token, downloadfile, machineid, downod)
+        vlad_download_file(token, vendor, downloadfile, machineid)
         sys.exit(0) 
 
     if clearfile:
         print("- DELETE FILE {} FROM LIVE RESPONSE LIBRARY".format(clearfile))
-        mdatp_cleanup_file(token, clearfile)
+        vlad_cleanup_file(token, vendor, clearfile)
         sys.exit(0) 
 
     if listlibrary:
-        print("- SHOW FILES FROM LIVE RESPONSE LIBRARY")
-        mdatp_list_library(token, print_output=True)
+        vlad_list_library(token, vendor, print_output=True)
         sys.exit(0) 
         
     if clearallfiles:
         print("- DELETE ALL VLAD FILES FROM LIVE RESPONSE LIBRARY")
-        mdatp_cleanup_all_files(token)
+        vlad_cleanup_all_files(token, vendor)
         sys.exit(0)
 
     if not command:
         print("  - ERROR: No command received")
         sys.exit(1)
 
-    if not client:
-        print("  - ERROR: No client received")
-        sys.exit(1)
-    
-    if not vendor:
-        print("  - ERROR: No vendor received")
-        sys.exit(1)
-
     if not machineid:
         print("  - ERROR: No machineid received")
         sys.exit(1)
 
-    if not token:
-        print("  - ERROR: No token received")
+    print("- CHECKING MACHINE ID {}".format(machineid))
+    endpoint =  vlad_get_machine_info(token, vendor, machineid)
+    if not endpoint:
+        print("  + ERROR: Endpoint {} not found".format(machineid))
         sys.exit(1)
 
+    #print("DEBUGING: {}".format(endpoint))
 
-    # Create tmp output file with random beauty name
-    ps1of = os.path.join(tmpod, 'vlad-{}.ps1'.format(os.urandom(4).hex()))   
+    # Create tmp output file
+    scriptof = vlad_generate_output_file(tmpod, vendor, endpoint)
 
     # Generate script
-    script = generate_command_script(command, ps1of) 
+    script = generate_command_script(command, scriptof)
 
     # Upload file
-    response, uscript = mdatp_upload_file(token, ps1of)
+    response, uscript = vlad_upload_file(token, vendor, scriptof)
 
-    ubinary = None
     if binary:
-        response, ubinary = mdatp_upload_file(token, binary)
-        putactid = mdatp_put_file(token, machineid, ubinary)
-        print("    + PUT FILE ACTION ID: {}".format(putactid))
-        time.sleep(5)
-        if putactid:
-            output = mdatp_get_execution_output(token, putactid)
-            if output != 'Completed':
-                mdatp_cleanup_file(token, uscript)
-                print("    + ERROR: PutFile failed")
-                sys.exit(1)
-        else:
-            print("    + ERROR: No PutFile actionid received")
-            mdatp_cleanup_file(token, uscript)
-            sys.exit(1)
-            
+        response, ubinary = vlad_upload_binary(token, vendor, machineid, binary)
 
     # Execute command
-    print("- EXECUTING SCRIPT: {}".format(ps1of))
-    exeactid = mdatp_execute_command(token, machineid, uscript)
-    print("    + SCRIPT ACTION ID: {}".format(exeactid))
+    execdata = vlad_execute_command(token, vendor, machineid, scriptof, uscript)
 
-    # Wait until actionid appear on systems
-    time.sleep(5)
-
-    if exeactid:
-        output = mdatp_get_execution_output(token, exeactid)
+    if execdata:
+        output = vlad_get_execution_output(token, vendor, execdata)
+        if not output:
+            print("    - ERROR: No output received")
     else:
-        print("  + ERROR: No RunScript actionid received")
-        mdatp_cleanup_file(token, uscript)
-        sys.exit(1)
-    
-    if not output:
-        print("  + ERROR: No RunScript output received")
-        mdatp_cleanup_file(token, uscript)
-        sys.exit(1)
+        output = None
+        print("    - ERROR: No execution data received")
 
-    resdata = json.loads(output)
-
-    if 'error' in resdata:
-        print("  + ERROR {}: {}".format(resdata['error']['code'], resdata['error']['message']))
-        # Cleanup files
-        mdatp_cleanup_file(token, uscript)
-        print("  + SCRIPT {} CLEANED: {}".format(uscript, response))
-        if binary:
-            mdatp_cleanup_file(token, ubinary)
-            print("  + BINARY {} CLEANED: {}".format(ubinary, response))
-
-    # Download output
-    #DEBUG PRINT
-    #print("    + DOWNLOADING OUTPUT: {}".format(resdata['value']))
-    url = resdata['value']
-    response = requests.get(url)
-    data = response.json()
-    
-
-    # Print json beauty in console
-    print("    + PRINTING JSON OUTPUT: ")
-     #print(json.dumps(data, indent=4, sort_keys=True))
-    json_string=(json.dumps(data, indent=4, sort_keys=True))
-    parse_json(json_string,command)
-    
-    
+    # Print Output
+    if output:
+        vlad_print_output(output, vendor, command)
 
     # Cleanup files
-    mdatp_cleanup_file(token, uscript)
-    print("    + SCRIPT {} CLEANED: {}".format(uscript, response))
+    print ("- CLEANING UP FILES")
     if binary:
-        mdatp_cleanup_file(token, ubinary)
-        print("  + BINARY {} CLEANED: {}".format(ubinary, response))
+        check = vlad_cleanup_files(token, vendor, uscript, ubinary)
+    else:
+        check = vlad_cleanup_files(token, vendor, uscript)
+    if not check:
+        print("    - ERROR: Cleanup failed")
+        sys.exit(1)
+    else:
+        print("    + CLEANUP SUCCESSFUL")
+
+    print ("- END OF VLAD EXECUTION. Enjoy!")
+
+    sys.exit(0)
 
 # *** MAIN LOOP ***
 if __name__ == '__main__':
