@@ -48,8 +48,13 @@ from libs.tmv1 import tmv1_get_machine_info, tmv1_get_execution_output, tmv1_dow
 from libs.tmv1 import tmv1_extract_data, tmv1_download_file
 
 # GLOBAL VARIABLES
-VERSION = '0.4'
-INSTALL_PATH = os.path.dirname(os.path.abspath(__file__))
+VERSION = '0.5'
+
+# determine if application is a script file or frozen exe
+if getattr(sys, 'frozen', False):
+    INSTALL_PATH = os.path.dirname(sys.executable)
+elif __file__:
+    INSTALL_PATH = os.path.dirname(__file__)
 
 SUPPORTED_VENDORS= ["MDATP", "TMV1"]
 

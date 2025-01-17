@@ -1,1 +1,4 @@
+pyyaml
+munch
+requests
 pyzipper
