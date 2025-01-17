@@ -45,7 +45,7 @@ from libs.mdatp import mdatp_list_library, mdatp_cleanup_all_files, mdatp_get_ma
 from libs.tmv1 import tmv1_auth, tmv1_list_endpoints, tmv1_list_library, tmv1_upload_file
 from libs.tmv1 import tmv1_execute_command, tmv1_cleanup_file, tmv1_cleanup_all_files
 from libs.tmv1 import tmv1_get_machine_info, tmv1_get_execution_output, tmv1_download_output
-from libs.tmv1 import tmv1_extract_data
+from libs.tmv1 import tmv1_extract_data, tmv1_download_file
 
 # GLOBAL VARIABLES
 VERSION = '0.4'
@@ -82,7 +82,26 @@ def vlad_download_file(token, vendor, downloadfile, machineid):
     if vendor == 'MDATP':
         mdatp_download_file(token, downloadfile, machineid, downod)
     elif vendor == 'TMV1':
-        print("    - ERROR: Not implemented yet")
+        taskid = tmv1_download_file(token, downloadfile, machineid)
+        if not taskid:
+            print("    - ERROR: No TaskID received")
+            return None
+        print("    + SCRIPT TASK ID: {}".format(taskid))
+        execdata = tmv1_get_execution_output(token, taskid)
+        if not execdata:
+            print("    - ERROR: No output received")
+            return None
+        output = tmv1_download_output(token, execdata)
+        if not output:
+            print("    - ERROR: No output received")
+            return None
+        output_path = tmv1_extract_data(output, downod)
+        if not output_path:
+            print("    - ERROR: No output path received. Extraction failed")
+            return None
+
+        print("    + FILE DOWNLOADED TO: {}".format(output_path))
+
 
 def vlad_cleanup_file(token, vendor, clearfile):
     if vendor == 'MDATP':

@@ -564,3 +564,48 @@ def tmv1_extract_data(execdata, tmpod):
     decompress_zip_file(filename_path, output_path, password)
 
     return output_path
+
+
+def tmv1_download_file(aatmv1, downloadfile, machineid):
+    token = aatmv1["token"]
+    baseurl = aatmv1["baseurl"]
+
+    url = "{}/v3.0/response/endpoints/collectFile".format(baseurl)
+
+    headers = {
+        'Authorization': 'Bearer ' + token,
+        'Content-Type': 'application/json;charset=utf-8'
+    }
+
+    # Body must be a list of dictionaries
+    body = [{
+        'agentGuid': machineid,
+        'filePath': downloadfile
+    }]
+
+    try:
+        response = requests.post(url, headers=headers, json=body)
+        response_json = response.json()
+        #print("DEBUG: Response: {}".format(response_json))
+        
+        # Check individual response statuses
+        if response.status_code == 207:
+            for result in response_json:
+                if result.get('status') == 403:
+                    print("    - TMV1 DOWNLOAD FILE ERROR: Access Denied. Please check your api permissions.")
+                    return None
+                elif result.get('status') not in [200, 201, 202]:
+                    print("    - TMV1 DOWNLOAD FILE ERROR: {}".format(result))
+                    return None
+            
+            print("    - TMV1 DOWNLOAD FILE: File download request sent successfully")
+            statusdata = response.json()
+            taskid = statusdata[0].get('headers', [{}])[0].get('value', '').split('/')[-1]
+            return taskid
+        else:
+            print("    - TMV1 DOWNLOAD FILE ERROR: {}".format(response_json))
+            return None
+
+    except requests.exceptions.RequestException as e:
+        print("    - TMV1 DOWNLOAD FILE API ERROR: Error {}".format(e))
+        return None
