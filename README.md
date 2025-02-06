@@ -124,7 +124,7 @@ _More Info:_ https://learn.microsoft.com/en-us/microsoft-365/security/defender-e
 - [ ] Add SentinelOne Support
 - [ ] Add Crowdstrike Support
 - [ ] Add Cortex Support
-- [ ] Add TrendMicro Vision One Support
+- [X] Add TrendMicro Vision One Support
 
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
