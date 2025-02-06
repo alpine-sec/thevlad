@@ -178,8 +178,9 @@ def mdatp_execute_command(token, machineid, script):
     try:
         response = requests.post(url, headers=headers, json=data)
         response.raise_for_status()
+        
     except requests.exceptions.RequestException as e:
-        print("    - MDATP EXECUTE COMMAND API ERROR: Error {}".format(e))
+        print("    + MDATP EXECUTE COMMAND API ERROR: Error {}".format(e))
         return None
 
     if response.status_code != 200 and response.status_code != 201:
@@ -518,3 +519,18 @@ def mdatp_get_machine_info(token, machineid):
         return None
 
     return response.json()
+
+def mdatp_download_output(token, execdata):
+    url = execdata['value']
+    try:
+        response = requests.get(url)
+    except requests.exceptions.RequestException as e:
+        print("    - MDATP GET EXECUTION OUTPUT API ERROR: Error {}".format(e))
+        return None
+    if response.status_code == 200:
+        output = response.json()
+    else:
+        print("    - MDATP GET EXECUTION OUTPUT API ERROR: Error {}".format(response.status_code))
+        return None
+
+    return output

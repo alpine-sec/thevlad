@@ -27,17 +27,16 @@
 
 
 #Libraries
-import argparse
 import os
 import json
 import sys
-import requests
 import time
+import argparse
 
 from libs.utils import parse_config, generate_command_script, print_output_json
 from libs.utils import print_output_txt
 
-from libs.mdatp import mdatp_auth, mdatp_list_endpoints, mdatp_upload_file
+from libs.mdatp import mdatp_auth, mdatp_list_endpoints, mdatp_upload_file, mdatp_download_output
 from libs.mdatp import mdatp_put_file, mdatp_execute_command, mdatp_delete_pending_actions
 from libs.mdatp import mdatp_get_execution_output, mdatp_download_file, mdatp_cleanup_file
 from libs.mdatp import mdatp_list_library, mdatp_cleanup_all_files, mdatp_get_machine_info
@@ -48,7 +47,7 @@ from libs.tmv1 import tmv1_get_machine_info, tmv1_get_execution_output, tmv1_dow
 from libs.tmv1 import tmv1_extract_data, tmv1_download_file
 
 # GLOBAL VARIABLES
-VERSION = '0.5'
+VERSION = '0.5.2'
 
 # determine if application is a script file or frozen exe
 if getattr(sys, 'frozen', False):
@@ -142,12 +141,12 @@ def vlad_upload_binary(token, vendor, machineid, binary):
         if putactid:
             output = mdatp_get_execution_output(token, putactid)
             if output != 'Completed':
-                mdatp_cleanup_file(token, uscript)
+                mdatp_cleanup_file(token, ubinary)
                 print("    + ERROR: PutFile failed")
                 return None, None
         else:
             print("    + ERROR: No PutFile actionid received")
-            mdatp_cleanup_file(token, uscript)
+            mdatp_cleanup_file(token, ubinary)
             return None, None
     elif vendor == 'TMV1':
         print("    - ERROR: TMV1 does not support binary upload")
@@ -188,19 +187,9 @@ def vlad_execute_command(token, vendor, machineid, scriptof, uscript):
 
     return output
 
-def vlad_get_execution_output(token, vendor, execdata):
+def vlad_download_output(token, vendor, execdata):
     if vendor == 'MDATP':
-        url = execdata['value']
-        try:
-            response = requests.get(url)
-        except requests.exceptions.RequestException as e:
-            print("    - MDATP GET EXECUTION OUTPUT API ERROR: Error {}".format(e))
-            return None
-        if response.status_code == 200:
-            output = response.json()
-        else:
-            print("    - MDATP GET EXECUTION OUTPUT API ERROR: Error {}".format(response.status_code))
-            return None
+        output = mdatp_download_output(token, execdata)
     elif vendor == 'TMV1':
         output = tmv1_download_output(token, execdata)
         #print ("    + SCRIPT GET EXECUTION OUTPUT: {}".format(output))
@@ -452,7 +441,7 @@ def main():
     execdata = vlad_execute_command(token, vendor, machineid, scriptof, uscript)
 
     if execdata:
-        output = vlad_get_execution_output(token, vendor, execdata)
+        output = vlad_download_output(token, vendor, execdata)
         if not output:
             print("    - ERROR: No output received")
     else:
